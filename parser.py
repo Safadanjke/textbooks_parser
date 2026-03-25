@@ -13,7 +13,8 @@ from PIL import Image
 
 from config import (
     MD_PATH, XLSX_PATH, PDF_PATH, TESSERACT_PATH,
-    POPPLER_PATH, PATTERNS, ImageConfig, CleanConfig, ParserConfig
+    POPPLER_PATH, PATTERNS, ImageConfig, CleanConfig,
+    ParserConfig, LatexConfig,
 )
 
 
@@ -54,6 +55,53 @@ class TextbookParser:
         )
 
     @staticmethod
+    def _latex_unit_inside(unit: str) -> str:
+        """Единица измерения внутри (\\mathrm)."""
+
+        return LatexConfig.UNIT_LATEX_MAP.get(unit, f' {unit}')
+
+    @staticmethod
+    def _latexify_plain_segment(segment: str) -> str:
+        """Преобразует равенства в тексте в формат LaTeX."""
+
+        s = segment
+        for rule in LatexConfig.LATEX_RULES:
+            s = re.sub(
+                rule['pattern'],
+                rule['repl'],
+                s,
+                flags=rule.get('flags', 0)
+            )
+        return s
+
+    @staticmethod
+    def _latexify_markdown_body(text: str) -> str:
+        """Оборачивает формулы в вид LaTeX."""
+
+        if not LatexConfig.ENABLED:
+            return text
+        out: List[str] = []
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] == '$':
+                j = text.find('$', i + 1)
+                if j == -1:
+                    out.append(text[i:])
+                    break
+                out.append(text[i: j + 1])
+                i = j + 1
+            else:
+                j = text.find('$', i)
+                if j == -1:
+                    out.append(
+                        TextbookParser._latexify_plain_segment(text[i:]))
+                    break
+                out.append(TextbookParser._latexify_plain_segment(text[i:j]))
+                i = j
+        return ''.join(out)
+
+    @staticmethod
     def _normalize_question_body(body: str) -> str:
         """Очищает текст вопроса от служебных маркеров."""
 
@@ -82,10 +130,13 @@ class TextbookParser:
     ) -> "Question":
         """Создаёт объект Question."""
 
+        normalized = TextbookParser._normalize_question_body(body)
+        latex_form = TextbookParser._latexify_markdown_body(normalized)
+
         return Question(
             part=part,
             number=num,
-            body=TextbookParser._normalize_question_body(body),
+            body=latex_form,
             image=image,
         )
 
